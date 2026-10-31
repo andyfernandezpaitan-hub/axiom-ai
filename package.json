@@ -6,7 +6,8 @@
   "scripts": {
     "test": "tsx --test tests/*.test.ts",
     "dev": "tsx src/index.ts",
-    "api": "tsx src/api/main.ts"
+    "api": "tsx src/api/main.ts",
+    "create-admin": "tsx src/api/createAdmin.ts"
   },
   "keywords": [],
   "author": "",
@@ -19,6 +20,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
+    "@fastify/cookie": "^11.1.5",
     "@fastify/helmet": "^13.2.0",
     "@fastify/rate-limit": "^11.2.1",
     "fastify": "^5.12.7"

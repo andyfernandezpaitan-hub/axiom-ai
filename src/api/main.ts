@@ -6,7 +6,6 @@ import { buildServer } from "./server";
 /**
  * Arranca la API de AXIOM.
  * Variables (.env):
- * - AXIOM_API_TOKEN (obligatoria, minimo 32 caracteres)
  * - AXIOM_API_PORT (opcional, por defecto 3000)
  * - AXIOM_DB_PATH (opcional, por defecto data/axiom.db)
  */
@@ -17,12 +16,11 @@ async function main(): Promise<void> {
         // Sin .env: se usan las variables del sistema.
     }
 
-    const apiToken = process.env.AXIOM_API_TOKEN ?? "";
     const port = Number.parseInt(process.env.AXIOM_API_PORT ?? "3000", 10);
     const dbPath = process.env.AXIOM_DB_PATH ?? path.join(process.cwd(), "data", "axiom.db");
 
     const db = new AxiomDatabase(dbPath);
-    const app = await buildServer({ db, apiToken, logger: true });
+    const app = await buildServer({ db, logger: true });
 
     // Solo escucha en esta computadora. Para publicarla hara falta HTTPS
     // (proxy inverso o hosting) y login de usuarios.

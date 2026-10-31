@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -22,6 +22,15 @@ export interface StoredStudent {
     profile: StudentProfile;
 }
 
+export type UserRole = "STUDENT" | "TEACHER" | "ADMIN";
+export const USER_ROLES: readonly UserRole[] = ["STUDENT", "TEACHER", "ADMIN"];
+
+export interface StoredUser {
+    id: string;
+    email: string;
+    role: UserRole;
+}
+
 export interface StoredExercise {
     id: string;
     studentId: string;
@@ -39,6 +48,20 @@ interface ProfileJson {
 }
 
 const MIGRATIONS = [
+    `CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL CHECK (role IN ('STUDENT', 'TEACHER', 'ADMIN')),
+        created_at TEXT NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS sessions (
+        token_hash TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)`,
     `CREATE TABLE IF NOT EXISTS students (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -63,6 +86,10 @@ const MIGRATIONS = [
     )`,
     `CREATE INDEX IF NOT EXISTS idx_messages_student ON messages(student_id, id)`
 ];
+
+function hashToken(token: string): string {
+    return createHash("sha256").update(token).digest("hex");
+}
 
 function profileToJson(profile: StudentProfile): string {
     const data: ProfileJson = {
@@ -102,6 +129,103 @@ export class AxiomDatabase {
         for (const sql of MIGRATIONS) {
             this.db.exec(sql);
         }
+        const columns = this.db.prepare("PRAGMA table_info(students)").all() as Array<{ name: string }>;
+        if (!columns.some((c) => c.name === "user_id")) {
+            this.db.exec("ALTER TABLE students ADD COLUMN user_id TEXT REFERENCES users(id) ON DELETE CASCADE");
+        }
+        this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_students_user ON students(user_id)");
+    }
+
+    // ---- Usuarios y sesiones ------------------------------------------------
+
+    /** Crea usuario + perfil de estudiante en una sola transaccion. */
+    public createUser(
+        email: string,
+        passwordHash: string,
+        role: UserRole,
+        studentName: string
+    ): { user: StoredUser; studentId: string } {
+        const userId = randomUUID();
+        const studentId = randomUUID();
+        const now = new Date().toISOString();
+        this.db.exec("BEGIN");
+        try {
+            this.db
+                .prepare("INSERT INTO users (id, email, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)")
+                .run(userId, email, passwordHash, role, now);
+            this.db
+                .prepare(
+                    "INSERT INTO students (id, name, profile_json, created_at, updated_at, user_id) VALUES (?, ?, ?, ?, ?, ?)"
+                )
+                .run(studentId, studentName, profileToJson(new StudentProfile(studentName)), now, now, userId);
+            this.db.exec("COMMIT");
+        } catch (error) {
+            this.db.exec("ROLLBACK");
+            throw error;
+        }
+        return { user: { id: userId, email, role }, studentId };
+    }
+
+    public emailExists(email: string): boolean {
+        return this.db.prepare("SELECT 1 FROM users WHERE email = ?").get(email) !== undefined;
+    }
+
+    public getUserByEmail(email: string): (StoredUser & { passwordHash: string }) | undefined {
+        const row = this.db
+            .prepare("SELECT id, email, role, password_hash FROM users WHERE email = ?")
+            .get(email) as { id: string; email: string; role: UserRole; password_hash: string } | undefined;
+        return row && { id: row.id, email: row.email, role: row.role, passwordHash: row.password_hash };
+    }
+
+    public getUser(id: string): StoredUser | undefined {
+        const row = this.db.prepare("SELECT id, email, role FROM users WHERE id = ?").get(id) as
+            | StoredUser
+            | undefined;
+        return row && { id: row.id, email: row.email, role: row.role };
+    }
+
+    public setUserRole(id: string, role: UserRole): boolean {
+        const result = this.db.prepare("UPDATE users SET role = ? WHERE id = ?").run(role, id);
+        return Number(result.changes) === 1;
+    }
+
+    public getStudentIdForUser(userId: string): string | undefined {
+        const row = this.db.prepare("SELECT id FROM students WHERE user_id = ?").get(userId) as
+            | { id: string }
+            | undefined;
+        return row?.id;
+    }
+
+    /**
+     * Crea una sesion y devuelve el token en claro (solo va a la cookie).
+     * En la base de datos se guarda unicamente su hash SHA-256.
+     */
+    public createSession(userId: string, ttlMs: number): string {
+        const token = randomBytes(32).toString("base64url");
+        const now = Date.now();
+        this.db.prepare("DELETE FROM sessions WHERE expires_at < ?").run(new Date(now).toISOString());
+        this.db
+            .prepare("INSERT INTO sessions (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)")
+            .run(hashToken(token), userId, new Date(now + ttlMs).toISOString(), new Date(now).toISOString());
+        return token;
+    }
+
+    public getSessionUser(token: string): StoredUser | undefined {
+        const row = this.db
+            .prepare(
+                `SELECT u.id, u.email, u.role FROM sessions s JOIN users u ON u.id = s.user_id
+                 WHERE s.token_hash = ? AND s.expires_at > ?`
+            )
+            .get(hashToken(token), new Date().toISOString()) as StoredUser | undefined;
+        return row && { id: row.id, email: row.email, role: row.role };
+    }
+
+    public deleteSession(token: string): void {
+        this.db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(hashToken(token));
+    }
+
+    public deleteUserSessions(userId: string): void {
+        this.db.prepare("DELETE FROM sessions WHERE user_id = ?").run(userId);
     }
 
     public close(): void {
