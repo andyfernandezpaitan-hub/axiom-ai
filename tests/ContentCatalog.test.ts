@@ -5,6 +5,7 @@ import {
     ContentCatalog,
     DIVISION_CONTENT_ID,
     MULTIPLICATION_CONTENT_ID,
+    PROGRAMMING_MODULO_CONTENT_ID,
     SUBTRACTION_CONTENT_ID
 } from "../src/education/ContentCatalog";
 import { EducationEngine } from "../src/education/EducationEngine";
@@ -59,9 +60,45 @@ test("expone los contenidos disponibles para una eleccion manual", () => {
             "matematicas-sumas",
             "matematicas-restas",
             "matematicas-multiplicaciones",
-            "matematicas-divisiones"
+            "matematicas-divisiones",
+            "programacion-modulo"
         ]
     );
+});
+
+test("incluye el operador modulo como contenido validado de programacion", () => {
+    const content = new ContentCatalog().getById(PROGRAMMING_MODULO_CONTENT_ID);
+
+    assert.ok(content);
+    assert.equal(content.subject, "programacion");
+    assert.match(content.learningObjective, /modulo/);
+});
+
+test("genera ejercicios de modulo con resto correcto", () => {
+    const exercise = new EducationEngine().createMathExercise(
+        "dificil",
+        PROGRAMMING_MODULO_CONTENT_ID
+    );
+
+    assert.equal(exercise.operation, "modulo");
+    assert.match(exercise.question, /%/);
+    assert.equal(exercise.answer, exercise.operands[0] % exercise.operands[1]);
+});
+
+test("crea una explicacion paso a paso para el operador modulo", () => {
+    const explanation = new EducationEngine().createStepByStepExplanation({
+        question: "¿Cuánto es 10 % 3?",
+        answer: 1,
+        difficulty: "facil",
+        contentId: PROGRAMMING_MODULO_CONTENT_ID,
+        topic: "operador modulo (%)",
+        learningObjective: "Calcular el resto de una division entera.",
+        operation: "modulo",
+        operands: [10, 3]
+    });
+
+    assert.equal(explanation.title, "Como resolver el operador modulo");
+    assert.match(explanation.steps.at(-1) ?? "", /El resto \(modulo\) es/);
 });
 
 test("asocia cada ejercicio al contenido validado que lo genero", () => {

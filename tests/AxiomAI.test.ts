@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
 import test from "node:test";
 
 import {
     AxiomAI,
     MAX_HISTORY_MESSAGES,
     MAX_MESSAGE_LENGTH,
+    OpenJarvisModelClient,
     type AxiomMessage,
     type AxiomModelClient
 } from "../src/ai/AxiomAI";
@@ -12,7 +14,7 @@ import {
 test("responde usando el modelo inyectado", async () => {
     const fakeClient: AxiomModelClient = {
         complete: async (messages: AxiomMessage[]) =>
-            `Respuesta simulada a: ${messages[messages.length - 1].content}`
+            `Respuesta simulada a: ${messages.at(-1)?.content}`
     };
     const axiom = new AxiomAI(fakeClient);
 
@@ -123,13 +125,11 @@ test("limita el historial y siempre empieza con un mensaje del usuario", async (
 
     const history = axiom.getHistory();
     assert.equal(history.length, MAX_HISTORY_MESSAGES);
-    assert.equal(history[0].role, "user");
+    assert.equal(history[0]?.role, "user");
 });
 
 test("OpenJarvisModelClient llama a /v1/chat/completions con el historial", async () => {
-    const { createServer } = await import("node:http");
-    const { OpenJarvisModelClient } = await import("../src/ai/AxiomAI");
-    let receivedBody: any;
+    let receivedBody: { model: string; messages: Array<{ role: string; content: string }> } | undefined;
     let receivedPath = "";
 
     const server = createServer((req, res) => {
@@ -151,22 +151,20 @@ test("OpenJarvisModelClient llama a /v1/chat/completions con el historial", asyn
 
         assert.equal(response.message, "hola desde jarvis");
         assert.equal(receivedPath, "/v1/chat/completions");
-        assert.equal(receivedBody.model, "qwen3.5:2b");
-        assert.equal(receivedBody.messages[0].role, "system");
-        assert.deepEqual(receivedBody.messages[1], { role: "user", content: "hola" });
+        assert.equal(receivedBody?.model, "qwen3.5:2b");
+        assert.equal(receivedBody?.messages[0]?.role, "system");
+        assert.deepEqual(receivedBody?.messages[1], { role: "user", content: "hola" });
     } finally {
         server.close();
     }
 });
 
 test("OpenJarvisModelClient rechaza URLs que no son http(s)", async () => {
-    const { OpenJarvisModelClient } = await import("../src/ai/AxiomAI");
     assert.throws(() => new OpenJarvisModelClient("file:///etc/passwd"), /HTTPS/);
     assert.throws(() => new OpenJarvisModelClient("no es una url"), /no es válida/);
 });
 
 test("OpenJarvisModelClient exige HTTPS para servidores remotos", async () => {
-    const { OpenJarvisModelClient } = await import("../src/ai/AxiomAI");
     assert.throws(() => new OpenJarvisModelClient("http://ejemplo.com"), /HTTPS/);
     assert.doesNotThrow(() => new OpenJarvisModelClient("https://ejemplo.com"));
     assert.doesNotThrow(() => new OpenJarvisModelClient("http://localhost:8000"));
