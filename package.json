@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "test": "tsx --test tests/*.test.ts",
-    "dev": "tsx src/index.ts"
+    "dev": "tsx src/index.ts",
+    "api": "tsx src/api/main.ts"
   },
   "keywords": [],
   "author": "",
@@ -17,6 +18,9 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.128.0"
+    "@anthropic-ai/sdk": "^0.128.0",
+    "@fastify/helmet": "^13.2.0",
+    "@fastify/rate-limit": "^11.2.1",
+    "fastify": "^5.12.7"
   }
 }

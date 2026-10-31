@@ -203,6 +203,28 @@ export class AxiomAI {
         return this.history.map((m) => ({ ...m }));
     }
 
+    /**
+     * Carga un historial guardado (por ejemplo, desde la base de datos).
+     * Descarta roles invalidos y se asegura de empezar con un mensaje del usuario.
+     */
+    public loadHistory(messages: readonly AxiomMessage[]): void {
+        const valid = messages
+            .filter(
+                (m) =>
+                    (m.role === "user" || m.role === "assistant") &&
+                    typeof m.content === "string" &&
+                    m.content.trim() !== ""
+            )
+            .map((m) => ({ role: m.role, content: m.content }))
+            .slice(-MAX_HISTORY_MESSAGES);
+
+        while (valid.length > 0 && valid[0]?.role !== "user") {
+            valid.shift();
+        }
+
+        this.history = valid;
+    }
+
     /** Borra el historial de la conversacion. */
     public resetHistory(): void {
         this.history = [];
